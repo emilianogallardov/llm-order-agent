@@ -1,0 +1,80 @@
+"""Catalog access: products, vendors (with parent hierarchy), aliases, contracts.
+
+Everything here is keyed by canonical id, never by display name. Display-name
+matching is exactly the failure the validators are built to avoid: a vendor can
+be renamed or reparented and the ids must still resolve.
+"""
+
+from __future__ import annotations
+
+import json
+from decimal import Decimal
+from pathlib import Path
+from typing import Optional
+
+_DEFAULT_PATH = Path(__file__).resolve().parent.parent / "catalog.json"
+
+
+class Catalog:
+    def __init__(self, data: dict):
+        self._data = data
+        self._products = {p["id"]: p for p in data["products"]}
+        self._vendors = {v["id"]: v for v in data["vendors"]}
+        self._aliases = data.get("vendor_aliases", [])
+        self._contracts = data.get("contracts", [])
+
+    @classmethod
+    def load(cls, path: Optional[Path] = None) -> "Catalog":
+        path = path or _DEFAULT_PATH
+        return cls(json.loads(Path(path).read_text()))
+
+    # --- products -------------------------------------------------------------
+    def product(self, product_id: str) -> Optional[dict]:
+        return self._products.get(product_id)
+
+    def products_in_family(self, family: str) -> list[dict]:
+        return [p for p in self._products.values() if p["family"] == family]
+
+    # --- vendors --------------------------------------------------------------
+    def vendor(self, vendor_id: str) -> Optional[dict]:
+        return self._vendors.get(vendor_id)
+
+    def resolve_vendor_alias(self, text: str) -> list[dict]:
+        """Return the alias rows whose alias string matches the raw text. More
+        than one match means the reference is ambiguous and must be clarified."""
+        if not text:
+            return []
+        needle = text.strip().lower()
+        return [a for a in self._aliases if a["alias"].strip().lower() == needle]
+
+    def parent_vendor_id(self, vendor_id: str) -> Optional[str]:
+        """Walk to the contract-bearing parent entity. Returns None if the chain
+        is broken (a reparented vendor whose new parent isn't registered)."""
+        v = self._vendors.get(vendor_id)
+        if not v:
+            return None
+        parent_id = v.get("parent_id", vendor_id)
+        # The parent must itself be a known entity, otherwise the hierarchy is
+        # unresolved and we must fail closed rather than fabricate a binding.
+        if parent_id != vendor_id and parent_id not in self._vendors and not _is_parent_token(parent_id, self._contracts):
+            return None
+        return parent_id
+
+    # --- contracts ------------------------------------------------------------
+    def contract(self, product_id: str, parent_vendor_id: str, uom: str) -> Optional[dict]:
+        """Contract pricing is bound to (product, PARENT vendor, uom). Binding to
+        the parent is what survives a child vendor being reorganized."""
+        for c in self._contracts:
+            if (
+                c["product_id"] == product_id
+                and c["parent_vendor_id"] == parent_vendor_id
+                and c["uom"] == uom
+            ):
+                return {**c, "unit_price": Decimal(c["unit_price"])}
+        return None
+
+
+def _is_parent_token(parent_id: str, contracts: list[dict]) -> bool:
+    """A parent id is valid if some contract is bound to it, even when no vendor
+    row carries that id directly (the parent is a contracting entity)."""
+    return any(c["parent_vendor_id"] == parent_id for c in contracts)

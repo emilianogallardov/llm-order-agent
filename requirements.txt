@@ -1,0 +1,6 @@
+# Core library and the eval suite need NOTHING beyond the Python standard library.
+# Install a provider SDK only to run live against a model.
+
+# openai>=1.0      # for OpenAI-provider models
+# anthropic>=0.39  # for Anthropic-provider models
+# pytest>=8.0      # optional; the eval suite also runs via `python -m evals.test_cases`

@@ -1,0 +1,92 @@
+{
+  "products": [
+    {
+      "id": "PRD-CHED-SHARP-WHITE",
+      "name": "Cheddar Cheese, Sharp White",
+      "family": "cheddar",
+      "attributes": { "flavor": "sharp", "form": "block", "color": "white" },
+      "uom": "lb",
+      "vendor_id": "SUP-DAIRYCORP"
+    },
+    {
+      "id": "PRD-CHED-MILD-SHRED",
+      "name": "Cheddar Cheese, Mild Shreds",
+      "family": "cheddar",
+      "attributes": { "flavor": "mild", "form": "shred", "color": "yellow" },
+      "uom": "lb",
+      "vendor_id": "SUP-DAIRYCORP"
+    },
+    {
+      "id": "PRD-CHED-PROC-SLICE",
+      "name": "Cheddar Cheese, Processed Slices",
+      "family": "cheddar",
+      "attributes": { "flavor": "processed", "form": "slice", "color": "yellow" },
+      "uom": "case",
+      "vendor_id": "SUP-DAIRYCORP"
+    },
+    {
+      "id": "PRD-ROM-CLEANED",
+      "name": "Romaine Leaves, Cleaned",
+      "family": "romaine",
+      "attributes": { "form": "cleaned" },
+      "uom": "case",
+      "vendor_id": "SUP-FRESHGREEN"
+    }
+  ],
+  "vendors": [
+    {
+      "id": "SUP-DAIRYCORP",
+      "name": "DairyCorp, Inc.",
+      "category": "dairy",
+      "approved": true,
+      "parent_id": "SUP-DAIRY-PARENT-001"
+    },
+    {
+      "id": "SUP-QUALITY-DAIRY",
+      "name": "Quality Dairy Partners",
+      "category": "dairy",
+      "approved": true,
+      "parent_id": "SUP-QUALITY-PARENT-001"
+    },
+    {
+      "id": "SUP-SYSCO-DAIRY",
+      "name": "Sysco Foodservice Bulk Dairy",
+      "category": "dairy",
+      "approved": true,
+      "parent_id": "SUP-SYSCO-PARENT-001"
+    },
+    {
+      "id": "SUP-FRESHGREEN",
+      "name": "FreshGreen Logistics",
+      "category": "produce",
+      "approved": true,
+      "parent_id": "SUP-FRESHGREEN-PARENT-001"
+    }
+  ],
+  "vendor_aliases": [
+    { "alias": "the main dairy co", "vendor_id": "SUP-DAIRYCORP", "confidence": "high" },
+    { "alias": "main dairy co", "vendor_id": "SUP-DAIRYCORP", "confidence": "high" },
+    { "alias": "dairycorp", "vendor_id": "SUP-DAIRYCORP", "confidence": "high" },
+    { "alias": "the green produce distributor", "vendor_id": "SUP-FRESHGREEN", "confidence": "high" },
+    { "alias": "green produce distributor", "vendor_id": "SUP-FRESHGREEN", "confidence": "high" },
+    { "alias": "freshgreen", "vendor_id": "SUP-FRESHGREEN", "confidence": "high" }
+  ],
+  "contracts": [
+    {
+      "contract_id": "CT-DAIRY-2026",
+      "product_id": "PRD-CHED-SHARP-WHITE",
+      "parent_vendor_id": "SUP-DAIRY-PARENT-001",
+      "uom": "lb",
+      "unit_price": "4.50",
+      "effective": "2026-01-01"
+    },
+    {
+      "contract_id": "CT-PRODUCE-2026",
+      "product_id": "PRD-ROM-CLEANED",
+      "parent_vendor_id": "SUP-FRESHGREEN-PARENT-001",
+      "uom": "case",
+      "unit_price": "32.00",
+      "effective": "2026-01-01"
+    }
+  ]
+}
