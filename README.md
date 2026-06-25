@@ -174,6 +174,28 @@ ANTHROPIC_API_KEY=... MODEL_ORDER_EXTRACTION=claude-sonnet-4-6 python stress_tes
 # -> 16/16 cases passed every run (80/80 calls)
 ```
 
+## Limits (what grounding can't close, and the honest fix)
+
+Deterministic text-grounding tightens the boundary a lot, but it can't make a
+free-text pipeline fully adversary-proof on its own. Known residual cases:
+
+- **Negation.** "from backalley, not premier" still contains the word "premier",
+  so a substring/word check can't tell it's negated.
+- **Omitted constraint.** If the buyer says "organic" and the model simply drops
+  the attribute, there's nothing in the extraction to catch.
+- **Self-consistent span attribution.** Quantity+unit are grounded against the
+  model's own per-line `raw_text` span, which defeats naive cross-line bleed. A
+  model that returns a span deliberately covering two lines can still misattribute.
+- **Synonym/abbreviation products.** "evoo" resolves to olive oil even though the
+  word "oil" never appears, so product identity isn't hard-grounded (doing so
+  would reject legitimate phrasing).
+
+The real fix for all four is the same: **constrained extraction that returns
+character offsets** (so the validator checks the quantity token actually sits next
+to the product token), plus a **confidence score that routes low-confidence lines
+to human review**. This repo deliberately stops at the deterministic layer and
+documents the seam, rather than pretending substring checks are airtight.
+
 ## Project layout
 
 ```

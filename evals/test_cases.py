@@ -125,7 +125,7 @@ def test_quantity_inflation_is_blocked():
     ]}
     result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
     assert result.status == OrderStatus.VALIDATION_BLOCKED
-    assert "quantity_not_grounded" in result.reasons
+    assert "quantity_uom_not_grounded" in result.reasons
 
 
 def test_vendor_swap_is_blocked():
@@ -216,6 +216,27 @@ def test_future_dated_contract_is_ignored():
     assert str(result.order_total) == "225.00"
 
 
+def test_duplicate_active_contract_is_blocked():
+    """Two active contracts with the same effective date is a real ambiguity.
+    Refuse to price rather than pick by list order."""
+    data = copy.deepcopy(_BASE)
+    for cid, price in (("CT-DUPE-A", "1.00"), ("CT-DUPE-B", "9.00")):
+        data["contracts"].insert(0, {
+            "contract_id": cid, "product_id": "PRD-CHED-SHARP-WHITE",
+            "parent_vendor_id": "SUP-DAIRY-PARENT-001", "uom": "lb",
+            "unit_price": price, "effective": "2026-02-01",
+        })
+    text = "50 lbs sharp white cheddar from the main dairy co"
+    extraction = {"lines": [
+        _line(raw_text=text, product_family="cheddar",
+              stated_attributes={"flavor": "sharp"}, vendor_query="the main dairy co",
+              quantity=50, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(data), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.VALIDATION_BLOCKED
+    assert "ambiguous_contract" in result.reasons
+
+
 # --- Structural change / non-determinism (REQUIRED) ---------------------------
 def test_supplier_rename_survives_via_canonical_ids():
     drifted = copy.deepcopy(_BASE)
@@ -295,6 +316,7 @@ def _main() -> int:
         test_empty_order_is_blocked,
         test_malformed_shapes_fail_closed,
         test_future_dated_contract_is_ignored,
+        test_duplicate_active_contract_is_blocked,
         test_supplier_rename_survives_via_canonical_ids,
         test_broken_supplier_hierarchy_fails_closed,
         test_uom_synonyms_are_canonicalized,

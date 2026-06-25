@@ -117,6 +117,23 @@ class Catalog:
         that date are eligible, and the one with the latest effective date wins.
         That stops a future-dated or duplicate contract from silently pricing the
         order."""
+        winners = self.active_contracts(product_id, parent_vendor_id, uom, as_of)
+        if not winners:
+            return None
+        best = winners[0]
+        return {**best, "unit_price": Decimal(best["unit_price"])}
+
+    def active_contracts(
+        self,
+        product_id: str,
+        parent_vendor_id: str,
+        uom: str,
+        as_of: Optional[str] = None,
+    ) -> list[dict]:
+        """All contracts effective on/before `as_of` for (product, parent, uom),
+        narrowed to those sharing the single latest effective date. More than one
+        means a genuine ambiguity (duplicate active contracts) the caller must
+        refuse to price rather than pick by list order."""
         matches = [
             c
             for c in self._contracts
@@ -127,9 +144,9 @@ class Catalog:
         if as_of is not None:
             matches = [c for c in matches if c.get("effective", "") <= as_of]
         if not matches:
-            return None
-        best = max(matches, key=lambda c: c.get("effective", ""))
-        return {**best, "unit_price": Decimal(best["unit_price"])}
+            return []
+        latest = max(c.get("effective", "") for c in matches)
+        return [c for c in matches if c.get("effective", "") == latest]
 
 
 def _is_parent_token(parent_id: str, contracts: list[dict]) -> bool:

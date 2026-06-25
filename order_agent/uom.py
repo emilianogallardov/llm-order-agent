@@ -32,6 +32,12 @@ _LOOKUP: dict[str, str] = {
 }
 
 
+def synonyms_for(canonical: str) -> set[str]:
+    """All accepted spellings of a canonical unit (lb -> {lb, lbs, pound, ...}).
+    Used by grounding to confirm the unit actually appears in the order text."""
+    return _SYNONYMS.get(canonical, {canonical})
+
+
 def canonicalize(raw: object) -> str | None:
     # Defensive: a non-string unit (model returned a number/list) is not a usable
     # unit. Return None so the validator blocks on a missing/invalid UOM rather
