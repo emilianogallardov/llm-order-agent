@@ -1,9 +1,9 @@
-"""Eval suite: the three cases the system is designed to get right.
+"""Eval suite: the cases the system is designed to get right.
 
 These assert on the DETERMINISTIC output, so they are golden-set regression tests,
 not vibes. The LLM step is replaced by a MockClient returning a fixed extraction,
 which makes the suite fast, free, and reproducible. The exact same prompts and
-pipeline run live through the real client (see run.py --live).
+pipeline run live through the real client (see run.py --live and stress_test.py).
 
 Run standalone:  python -m evals.test_cases
 Run with pytest: pytest -q
@@ -34,27 +34,27 @@ def _mock(extraction: dict) -> MockClient:
     return MockClient(lambda system, user: extraction)
 
 
-# --- Test Case 1: happy path (alias + contract pricing) -----------------------
+# --- Test Case 1: happy path (alias + attributes + contract pricing) ----------
 def test_happy_path_resolves_to_865():
     extraction = {
         "lines": [
             {
                 "raw_text": "50 lbs sharp cheddar from the main dairy co",
-                "product_id": "PRD-CHED-SHARP-WHITE",
                 "product_family": "cheddar",
+                "stated_attributes": {"flavor": "sharp", "form": "block"},
+                "product_id": "PRD-CHED-SHARP-WHITE",
                 "vendor_query": "the main dairy co",
                 "quantity": 50,
                 "uom": "lb",
-                "missing_attributes": [],
             },
             {
-                "raw_text": "20 cases romaine from the green produce distributor",
-                "product_id": "PRD-ROM-CLEANED",
+                "raw_text": "20 cases cleaned romaine from the green produce distributor",
                 "product_family": "romaine",
+                "stated_attributes": {"form": "cleaned"},
+                "product_id": "PRD-ROM-CLEANED",
                 "vendor_query": "the green produce distributor",
                 "quantity": 20,
                 "uom": "case",
-                "missing_attributes": [],
             },
         ]
     }
@@ -78,26 +78,25 @@ def test_happy_path_resolves_to_865():
 
 # --- Test Case 2: ambiguous variant + vendor must BLOCK finalization ----------
 def test_ambiguous_order_requires_clarification():
-    # A faithful model flags what it can't pin down instead of guessing.
     extraction = {
         "lines": [
             {
                 "raw_text": "50 lbs cheddar from the dairy supplier",
-                "product_id": None,
                 "product_family": "cheddar",
-                "vendor_query": "the dairy supplier",
+                "stated_attributes": {},  # bare "cheddar": no distinguishing attrs
+                "product_id": None,
+                "vendor_query": "the dairy supplier",  # not in alias table
                 "quantity": 50,
                 "uom": "lb",
-                "missing_attributes": ["flavor", "form"],
             },
             {
-                "raw_text": "20 cases romaine from Green",
-                "product_id": "PRD-ROM-CLEANED",
+                "raw_text": "20 cases cleaned romaine from Green",
                 "product_family": "romaine",
-                "vendor_query": "Green",
+                "stated_attributes": {"form": "cleaned"},
+                "product_id": "PRD-ROM-CLEANED",
+                "vendor_query": "Green",  # too vague to resolve
                 "quantity": 20,
                 "uom": "case",
-                "missing_attributes": [],
             },
         ]
     }
@@ -110,6 +109,58 @@ def test_ambiguous_order_requires_clarification():
     assert "cheddar variant" in result.blocked_fields
     assert "supplier entity" in result.blocked_fields
     assert result.clarification          # a question was drafted
+
+
+# --- The improvement: deterministic layer owns product resolution -------------
+def test_confidently_wrong_model_pick_is_caught():
+    """The model commits to a specific SKU, but the buyer only said 'cheddar'.
+    Because the stated attributes don't single out one product, the validator
+    must clarify rather than trust the model's (over)confident product_id."""
+    extraction = {
+        "lines": [
+            {
+                "raw_text": "40 lbs cheddar from the main dairy co",
+                "product_family": "cheddar",
+                "stated_attributes": {},  # nothing distinguishing was actually said
+                "product_id": "PRD-CHED-SHARP-WHITE",  # model guessed anyway
+                "vendor_query": "the main dairy co",
+                "quantity": 40,
+                "uom": "lb",
+            }
+        ]
+    }
+    agent = OrderAgent(catalog=_catalog(), client=_mock(extraction))
+    result = agent.process("(order text)")
+
+    assert result.status == OrderStatus.CLARIFICATION_REQUIRED
+    assert result.lines == []
+    assert any("ambiguous_variant" in r for r in result.reasons)
+
+
+def test_attributes_override_a_wrong_model_pick():
+    """The model named the wrong variant (sharp) but the text said 'mild shredded'.
+    The validator resolves by attributes, so it lands on the mild shred SKU and
+    its $3.80 contract, not the model's pick."""
+    extraction = {
+        "lines": [
+            {
+                "raw_text": "50 lbs mild shredded cheddar from the main dairy co",
+                "product_family": "cheddar",
+                "stated_attributes": {"flavor": "mild", "form": "shred"},
+                "product_id": "PRD-CHED-SHARP-WHITE",  # wrong; attributes win
+                "vendor_query": "the main dairy co",
+                "quantity": 50,
+                "uom": "lb",
+            }
+        ]
+    }
+    agent = OrderAgent(catalog=_catalog(), client=_mock(extraction))
+    result = agent.process("(order text)")
+
+    assert result.status == OrderStatus.READY_FOR_STAGING
+    assert result.lines[0].product_id == "PRD-CHED-MILD-SHRED"
+    assert str(result.lines[0].contract_unit_price) == "3.80"
+    assert str(result.order_total) == "190.00"
 
 
 # --- Test Case 3: structural change / non-determinism (REQUIRED) ---------------
@@ -127,12 +178,12 @@ def test_supplier_rename_survives_via_canonical_ids():
         "lines": [
             {
                 "raw_text": "50 lbs sharp cheddar from the main dairy co",
-                "product_id": "PRD-CHED-SHARP-WHITE",
                 "product_family": "cheddar",
+                "stated_attributes": {"flavor": "sharp", "form": "block"},
+                "product_id": "PRD-CHED-SHARP-WHITE",
                 "vendor_query": "the main dairy co",
                 "quantity": 50,
                 "uom": "lb",
-                "missing_attributes": [],
             }
         ]
     }
@@ -164,12 +215,12 @@ def test_broken_supplier_hierarchy_fails_closed():
         "lines": [
             {
                 "raw_text": "50 lbs sharp cheddar from the main dairy co",
-                "product_id": "PRD-CHED-SHARP-WHITE",
                 "product_family": "cheddar",
+                "stated_attributes": {"flavor": "sharp", "form": "block"},
+                "product_id": "PRD-CHED-SHARP-WHITE",
                 "vendor_query": "the main dairy co",
                 "quantity": 50,
                 "uom": "lb",
-                "missing_attributes": [],
             }
         ]
     }
@@ -188,12 +239,12 @@ def test_uom_synonyms_are_canonicalized():
         "lines": [
             {
                 "raw_text": "50 pounds sharp cheddar from the main dairy co",
-                "product_id": "PRD-CHED-SHARP-WHITE",
                 "product_family": "cheddar",
+                "stated_attributes": {"flavor": "sharp", "form": "block"},
+                "product_id": "PRD-CHED-SHARP-WHITE",
                 "vendor_query": "the main dairy co",
                 "quantity": 50,
                 "uom": "lbs",  # synonym of the contract's "lb"
-                "missing_attributes": [],
             }
         ]
     }
@@ -211,12 +262,12 @@ def test_uom_mismatch_is_blocked():
         "lines": [
             {
                 "raw_text": "20 cases sharp cheddar from the main dairy co",
-                "product_id": "PRD-CHED-SHARP-WHITE",
                 "product_family": "cheddar",
+                "stated_attributes": {"flavor": "sharp", "form": "block"},
+                "product_id": "PRD-CHED-SHARP-WHITE",
                 "vendor_query": "the main dairy co",
                 "quantity": 20,
                 "uom": "case",  # contract is priced per lb
-                "missing_attributes": [],
             }
         ]
     }
@@ -232,6 +283,8 @@ def _main() -> int:
     tests = [
         test_happy_path_resolves_to_865,
         test_ambiguous_order_requires_clarification,
+        test_confidently_wrong_model_pick_is_caught,
+        test_attributes_override_a_wrong_model_pick,
         test_supplier_rename_survives_via_canonical_ids,
         test_broken_supplier_hierarchy_fails_closed,
         test_uom_synonyms_are_canonicalized,

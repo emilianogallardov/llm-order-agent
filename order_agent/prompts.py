@@ -22,32 +22,36 @@ Follow these rules exactly:
 1. Use ONLY products and vendors that appear in the CATALOG provided below.
    Never invent a product id, vendor, SKU, or price.
 
-2. For each line, set `product_id` to the single best catalog match ONLY when the
-   buyer's text unambiguously identifies one product. A product is ambiguous when
-   two or more catalog products in the same family differ on a MATERIAL attribute
-   the buyer did not specify (e.g. cheddar sharpness sharp vs mild, or form block
-   vs shred vs slice). When ambiguous, set `product_id` to null and list the
-   missing attribute(s) in `missing_attributes`.
+2. For each line, set `product_family` (e.g. "cheddar", "romaine") and put every
+   product attribute you can read from the buyer's text into `stated_attributes`,
+   using the attribute keys/values shown for that family in the CATALOG (e.g.
+   {"flavor": "sharp", "form": "block"}). Only include an attribute the buyer
+   actually stated. A downstream validator uses these attributes to resolve the
+   exact SKU, so be precise and do not over-state.
 
-3. Put the buyer's raw vendor reference in `vendor_query` verbatim (e.g.
+3. Set `product_id` to your single best catalog-id guess, or null if unsure. This
+   is only a hint; the validator re-derives the real SKU from the attributes, so
+   never force a guess to seem confident.
+
+4. Put the buyer's raw vendor reference in `vendor_query` verbatim (e.g.
    "the main dairy co"). Do NOT resolve it to a vendor id yourself; the validator
    resolves vendors against an approval table.
 
-4. Copy `quantity` and `uom` exactly as written. Do not convert units. Do not
+5. Copy `quantity` and `uom` exactly as written. Do not convert units. Do not
    compute totals or prices. Money is not your job.
 
-5. Return ONLY a JSON object, no prose, matching this schema exactly:
+6. Return ONLY a JSON object, no prose, matching this schema exactly:
 
 {
   "lines": [
     {
       "raw_text": "<the snippet of the order this line came from>",
-      "product_id": "<catalog product id or null>",
       "product_family": "<e.g. cheddar, romaine, or null>",
+      "stated_attributes": { "<attr>": "<value the buyer stated>" },
+      "product_id": "<catalog product id guess or null>",
       "vendor_query": "<raw vendor text or null>",
       "quantity": <number or null>,
-      "uom": "<unit string or null>",
-      "missing_attributes": ["<attribute names that block resolution>"]
+      "uom": "<unit string or null>"
     }
   ]
 }

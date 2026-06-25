@@ -27,12 +27,12 @@ class ExtractedLine:
     The model also flags when a material attribute (e.g. sharpness) is missing."""
 
     raw_text: str
-    product_id: Optional[str]          # proposed catalog id, or None if unsure
+    product_id: Optional[str]          # the model's best-guess id; only a HINT
     product_family: Optional[str]      # e.g. "cheddar", "romaine"
     vendor_query: Optional[str]        # raw vendor reference, e.g. "the main dairy co"
     quantity: Optional[float]
     uom: Optional[str]                 # verbatim unit: "lb", "case", ...
-    missing_attributes: list[str] = field(default_factory=list)
+    stated_attributes: dict = field(default_factory=dict)  # attrs read from the text
 
 
 @dataclass

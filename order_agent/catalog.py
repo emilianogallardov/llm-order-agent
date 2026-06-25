@@ -35,6 +35,40 @@ class Catalog:
     def products_in_family(self, family: str) -> list[dict]:
         return [p for p in self._products.values() if p["family"] == family]
 
+    def match_products_by_attributes(self, family: str, stated: dict | None) -> list[dict]:
+        """Products in the family whose attributes are consistent with the ones
+        stated in the order text. A stated attribute must equal the product's
+        value for that key; keys the product doesn't carry are ignored. This is
+        how the validator re-derives the SKU instead of trusting the model."""
+        out = []
+        for p in self.products_in_family(family):
+            attrs = p.get("attributes", {})
+            if all(
+                str(attrs[k]).lower() == str(v).lower()
+                for k, v in (stated or {}).items()
+                if k in attrs
+            ):
+                out.append(p)
+        return out
+
+    @staticmethod
+    def distinguishing_attributes(products: list[dict]) -> list[str]:
+        """Attribute keys on which the candidate products disagree, i.e. the ones
+        the buyer would need to specify to narrow it to one."""
+        keys: set[str] = set()
+        for p in products:
+            keys.update(p.get("attributes", {}).keys())
+        out = []
+        for k in keys:
+            vals = {
+                str(p["attributes"][k]).lower()
+                for p in products
+                if k in p.get("attributes", {})
+            }
+            if len(vals) > 1:
+                out.append(k)
+        return sorted(out)
+
     # --- vendors --------------------------------------------------------------
     def vendor(self, vendor_id: str) -> Optional[dict]:
         return self._vendors.get(vendor_id)

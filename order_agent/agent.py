@@ -52,10 +52,10 @@ def _parse_extracted(raw: dict) -> ExtractedOrder:
                 raw_text=item.get("raw_text", ""),
                 product_id=item.get("product_id"),
                 product_family=item.get("product_family"),
+                stated_attributes=item.get("stated_attributes") or {},
                 vendor_query=item.get("vendor_query"),
                 quantity=item.get("quantity"),
                 uom=item.get("uom"),
-                missing_attributes=item.get("missing_attributes") or [],
             )
         )
     return ExtractedOrder(lines=lines)

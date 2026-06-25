@@ -89,24 +89,27 @@ def _resolve_line(line: ExtractedLine, catalog: Catalog) -> ResolvedLine:
         raise _LineBlock("block", "uom", "missing_uom")
     uom = canonicalize(line.uom)
 
-    # 3. Product must resolve to exactly one catalog SKU. The model flags
-    #    ambiguity; we also refuse to proceed if it left product_id null or named
-    #    a family with multiple distinct products and missing attributes.
-    if line.missing_attributes:
-        raise _LineBlock(
-            "clarify",
-            f"{line.product_family or 'product'} variant",
-            f"ambiguous_variant: missing {', '.join(line.missing_attributes)}",
-        )
-    if not line.product_id:
-        family_size = len(catalog.products_in_family(line.product_family or ""))
-        if family_size > 1:
-            raise _LineBlock("clarify", f"{line.product_family} variant", "ambiguous_variant")
+    # 3. Resolve the product by ATTRIBUTES, not by trusting the model's pick.
+    #    The model's product_id is a hint; the catalog owns the decision. We
+    #    re-derive the SKU from the attributes stated in the text and refuse to
+    #    lock a line unless they resolve to exactly one product. This catches a
+    #    confidently-wrong model that named a plausible-but-incorrect variant.
+    family = line.product_family
+    if not family and line.product_id:
+        hint = catalog.product(line.product_id)
+        family = hint["family"] if hint else None
+    if not family or not catalog.products_in_family(family):
         raise _LineBlock("block", "product", "unresolved_product")
 
-    product = catalog.product(line.product_id)
-    if product is None:
-        raise _LineBlock("block", "product", f"unknown_product_id:{line.product_id}")
+    matches = catalog.match_products_by_attributes(family, line.stated_attributes)
+    if len(matches) == 0:
+        # The stated attributes contradict every product in the family.
+        raise _LineBlock("clarify", f"{family} variant", "no_matching_variant")
+    if len(matches) > 1:
+        needed = catalog.distinguishing_attributes(matches)
+        reason = f"ambiguous_variant: specify {', '.join(needed)}" if needed else "ambiguous_variant"
+        raise _LineBlock("clarify", f"{family} variant", reason)
+    product = matches[0]
 
     # 4. Vendor: resolve the raw reference through the approved-alias table by id.
     matches = catalog.resolve_vendor_alias(line.vendor_query or "")

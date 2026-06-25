@@ -79,6 +79,10 @@ MODEL_ORDER_EXTRACTION=gpt-4o python run.py --live "..."
 
 ### Why the design choices matter
 
+- **The model's product pick is a hint, not the decision.** The validator
+  re-derives the SKU from the attributes stated in the text and refuses to lock a
+  line unless they resolve to exactly one product. A confidently-wrong model
+  (right family, wrong variant) gets caught instead of trusted.
 - **Canonicalize units; never convert them.** `lbs`/`pounds`/`cases` collapse to
   one token (`lb`/`case`) so real phrasing resolves, but a per-lb price is never
   multiplied by a case count: different physical units stay distinct and block.
@@ -117,22 +121,27 @@ The suite asserts on the deterministic payload, so it's reproducible and free
 
 | Test | What it proves |
 |------|----------------|
-| `happy_path_resolves_to_865` | Alias resolution + contract pricing → exact `$865.00`. |
+| `happy_path_resolves_to_865` | Alias + attribute resolution + contract pricing → exact `$865.00`. |
 | `ambiguous_order_requires_clarification` | Missing variant/vendor → `clarification_required`, nothing staged. |
+| `confidently_wrong_model_pick_is_caught` | Model commits a SKU on bare "cheddar" → validator clarifies anyway. |
+| `attributes_override_a_wrong_model_pick` | Text says "mild shred", model guessed "sharp" → resolves to the mild SKU + `$3.80`. |
 | `supplier_rename_survives_via_canonical_ids` | Vendor reorg with stable parent id → still `$4.50`, byte-stable payload across 5 runs. |
 | `broken_supplier_hierarchy_fails_closed` | Unresolvable parent → `validation_blocked`, no fabricated price. |
+| `uom_synonyms_are_canonicalized` | `lbs`→`lb` so a correct order isn't blocked on plurals. |
 | `uom_mismatch_is_blocked` | A per-lb price is never multiplied by a case count. |
 
 ```
 $ python -m evals.test_cases
 PASS  test_happy_path_resolves_to_865
 PASS  test_ambiguous_order_requires_clarification
+PASS  test_confidently_wrong_model_pick_is_caught
+PASS  test_attributes_override_a_wrong_model_pick
 PASS  test_supplier_rename_survives_via_canonical_ids
 PASS  test_broken_supplier_hierarchy_fails_closed
 PASS  test_uom_synonyms_are_canonicalized
 PASS  test_uom_mismatch_is_blocked
 
-6/6 passed
+8/8 passed
 ```
 
 ### Live stress test
