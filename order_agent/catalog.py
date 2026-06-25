@@ -35,6 +35,14 @@ class Catalog:
     def products_in_family(self, family: str) -> list[dict]:
         return [p for p in self._products.values() if p["family"] == family]
 
+    def family_attribute_keys(self, family: str) -> set[str]:
+        """Every attribute key any product in the family carries. A stated key
+        outside this set is a constraint the catalog can't express (e.g. organic)."""
+        keys: set[str] = set()
+        for p in self.products_in_family(family):
+            keys.update(p.get("attributes", {}).keys())
+        return keys
+
     def match_products_by_attributes(self, family: str, stated: dict | None) -> list[dict]:
         """Products in the family whose attributes are consistent with the ones
         stated in the order text. A stated attribute must equal the product's
@@ -95,17 +103,33 @@ class Catalog:
         return parent_id
 
     # --- contracts ------------------------------------------------------------
-    def contract(self, product_id: str, parent_vendor_id: str, uom: str) -> Optional[dict]:
+    def contract(
+        self,
+        product_id: str,
+        parent_vendor_id: str,
+        uom: str,
+        as_of: Optional[str] = None,
+    ) -> Optional[dict]:
         """Contract pricing is bound to (product, PARENT vendor, uom). Binding to
-        the parent is what survives a child vendor being reorganized."""
-        for c in self._contracts:
-            if (
-                c["product_id"] == product_id
-                and c["parent_vendor_id"] == parent_vendor_id
-                and c["uom"] == uom
-            ):
-                return {**c, "unit_price": Decimal(c["unit_price"])}
-        return None
+        the parent is what survives a child vendor being reorganized.
+
+        When `as_of` (an ISO date) is given, only contracts effective on or before
+        that date are eligible, and the one with the latest effective date wins.
+        That stops a future-dated or duplicate contract from silently pricing the
+        order."""
+        matches = [
+            c
+            for c in self._contracts
+            if c["product_id"] == product_id
+            and c["parent_vendor_id"] == parent_vendor_id
+            and c["uom"] == uom
+        ]
+        if as_of is not None:
+            matches = [c for c in matches if c.get("effective", "") <= as_of]
+        if not matches:
+            return None
+        best = max(matches, key=lambda c: c.get("effective", ""))
+        return {**best, "unit_price": Decimal(best["unit_price"])}
 
 
 def _is_parent_token(parent_id: str, contracts: list[dict]) -> bool:

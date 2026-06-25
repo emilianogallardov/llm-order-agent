@@ -89,6 +89,16 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
+_PROVIDER_KEY_ENV = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+
+
+def provider_key_available(provider: str) -> bool:
+    """True if the env key for this provider is set. Used to skip a selected model
+    whose provider isn't configured (and fall back to one that is)."""
+    env = _PROVIDER_KEY_ENV.get(provider)
+    return bool(env and os.environ.get(env))
+
+
 def default_client() -> Optional[LLMClient]:
     """A live client if any provider key is present, else None (use mock)."""
     if os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):

@@ -43,6 +43,20 @@ def get_execution_config(task: str) -> ExecutionConfig:
     )
 
 
+def execution_config_for(task: str, model_id: str) -> ExecutionConfig:
+    """Like get_execution_config, but for a specific model id (e.g. the fallback).
+    Reuses the task's generation params with the given model."""
+    task_config = get_task_config(task)
+    return ExecutionConfig(
+        task=task,
+        model=model_id,
+        model_config=get_model(model_id),
+        fallback=task_config.fallback,
+        max_tokens=task_config.max_tokens,
+        temperature=task_config.temperature,
+    )
+
+
 def estimate_cost(cfg: ExecutionConfig, input_tokens: int, output_tokens: int) -> float:
     """Rough USD cost for a single call, using registry pricing (per 1M tokens)."""
     p = cfg.model_config.pricing

@@ -55,7 +55,7 @@ free text ─▶ model selector ─▶ LLM (proposes) ─▶ deterministic valid
 | **Model selector** | `order_agent/models.py`, `tasks.py`, `selector.py` | Declarative model registry + task-based routing. Callers ask for a *task* (`order_extraction`); the selector resolves model, fallback, and any env override. |
 | **Prompt** | `order_agent/prompts.py` | Constrains the model to the catalog, forces strict JSON, tells it to flag ambiguity and never compute prices. |
 | **LLM client** | `order_agent/llm.py` | One interface, provider chosen from model metadata (OpenAI / Anthropic). `MockClient` makes the pipeline runnable offline and in tests. |
-| **Validators** | `order_agent/validators.py`, `uom.py` | The decision layer: quantity/UOM checks, UOM canonicalization (`lbs`→`lb`), alias→vendor resolution by id, parent-entity resolution, contract pricing, `Decimal` math, fail-closed. |
+| **Validators** | `order_agent/validators.py`, `grounding.py`, `uom.py` | The decision layer: text-grounding of model facts, quantity/UOM checks, UOM canonicalization (`lbs`→`lb`), attribute-based SKU resolution, alias→vendor resolution by id, parent-entity resolution, effective-dated contract pricing, `Decimal` math, fail-closed. |
 | **Catalog** | `order_agent/catalog.py`, `catalog.json` | Products, vendors (with parent hierarchy), approved aliases, contracts. Everything keyed by canonical id, never display name. |
 
 ### The model selector
@@ -79,10 +79,19 @@ MODEL_ORDER_EXTRACTION=gpt-4o python run.py --live "..."
 
 ### Why the design choices matter
 
+- **Every model-extracted fact is grounded against the order text.** The model
+  picks the quantity, vendor reference, and attributes; the validator checks each
+  one actually appears in what the buyer wrote. A model that inflates `50 → 5000`,
+  swaps an unapproved vendor for an approved one, or switches `sharp → mild` is
+  caught, because the new fact isn't supported by the text. The model proposes;
+  the text is the source of truth.
 - **The model's product pick is a hint, not the decision.** The validator
-  re-derives the SKU from the attributes stated in the text and refuses to lock a
-  line unless they resolve to exactly one product. A confidently-wrong model
-  (right family, wrong variant) gets caught instead of trusted.
+  re-derives the SKU from the (grounded) attributes and refuses to lock a line
+  unless they resolve to exactly one product. A confidently-wrong model gets
+  caught instead of trusted.
+- **Fail closed, never crash.** Empty output, malformed JSON, a non-finite
+  quantity, or a wrong-typed field all become a blocked payload, not an exception
+  and not a half-built order.
 - **Canonicalize units; never convert them.** `lbs`/`pounds`/`cases` collapse to
   one token (`lb`/`case`) so real phrasing resolves, but a per-lb price is never
   multiplied by a case count: different physical units stay distinct and block.
@@ -121,10 +130,17 @@ The suite asserts on the deterministic payload, so it's reproducible and free
 
 | Test | What it proves |
 |------|----------------|
-| `happy_path_resolves_to_865` | Alias + attribute resolution + contract pricing → exact `$865.00`. |
+| `happy_path_resolves_to_865` | Alias + grounded-attribute resolution + contract pricing → exact `$865.00`. |
 | `ambiguous_order_requires_clarification` | Missing variant/vendor → `clarification_required`, nothing staged. |
 | `confidently_wrong_model_pick_is_caught` | Model commits a SKU on bare "cheddar" → validator clarifies anyway. |
 | `attributes_override_a_wrong_model_pick` | Text says "mild shred", model guessed "sharp" → resolves to the mild SKU + `$3.80`. |
+| `quantity_inflation_is_blocked` | Text "50", model emits 5000 → ungrounded quantity blocks. |
+| `vendor_swap_is_blocked` | Model swaps in an approved vendor not named in the text → blocks. |
+| `attribute_swap_forces_clarification` | Model's attributes contradict the text → dropped → ambiguous → clarify. |
+| `unsupported_constraint_is_blocked` | Buyer asked "organic" (not in catalog) → block, don't stage a non-organic SKU. |
+| `empty_order_is_blocked` | Empty model output is a failed parse, not a `$0` order. |
+| `malformed_shapes_fail_closed` | Bad JSON shape / wrong-typed unit / non-finite qty → blocked, never crashes. |
+| `future_dated_contract_is_ignored` | Only contracts effective on/before today are eligible; latest wins. |
 | `supplier_rename_survives_via_canonical_ids` | Vendor reorg with stable parent id → still `$4.50`, byte-stable payload across 5 runs. |
 | `broken_supplier_hierarchy_fails_closed` | Unresolvable parent → `validation_blocked`, no fabricated price. |
 | `uom_synonyms_are_canonicalized` | `lbs`→`lb` so a correct order isn't blocked on plurals. |
@@ -132,17 +148,14 @@ The suite asserts on the deterministic payload, so it's reproducible and free
 
 ```
 $ python -m evals.test_cases
-PASS  test_happy_path_resolves_to_865
-PASS  test_ambiguous_order_requires_clarification
-PASS  test_confidently_wrong_model_pick_is_caught
-PASS  test_attributes_override_a_wrong_model_pick
-PASS  test_supplier_rename_survives_via_canonical_ids
-PASS  test_broken_supplier_hierarchy_fails_closed
-PASS  test_uom_synonyms_are_canonicalized
-PASS  test_uom_mismatch_is_blocked
-
-8/8 passed
+...
+15/15 passed
 ```
+
+Several of these (grounding, empty-order, malformed-shape, effective-date) were
+added after an adversarial code review that ran attacks against the validator and
+found that model-extracted facts weren't being checked against the order text.
+Closing those is what moved this from "good prototype" to grounded and fail-closed.
 
 ### Live stress test
 
@@ -174,8 +187,10 @@ llm-order-agent/
 │   ├── prompts.py            # the extraction system prompt
 │   ├── llm.py                # provider-agnostic client + MockClient
 │   ├── schema.py             # ExtractedOrder (proposal) / ResolvedOrder (decision)
-│   ├── catalog.py            # id-keyed catalog access + alias/parent resolution
-│   └── validators.py         # deterministic resolution + Decimal pricing
+│   ├── catalog.py            # id-keyed catalog access + alias/parent/effective-date resolution
+│   ├── grounding.py          # check model facts appear in the order text
+│   ├── uom.py                # unit canonicalization (lbs -> lb), never conversion
+│   └── validators.py         # deterministic resolution + grounding + Decimal pricing
 └── evals/test_cases.py       # golden-set regression tests
 ```
 

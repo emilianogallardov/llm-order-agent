@@ -32,8 +32,11 @@ _LOOKUP: dict[str, str] = {
 }
 
 
-def canonicalize(raw: str | None) -> str | None:
-    if raw is None:
+def canonicalize(raw: object) -> str | None:
+    # Defensive: a non-string unit (model returned a number/list) is not a usable
+    # unit. Return None so the validator blocks on a missing/invalid UOM rather
+    # than crashing.
+    if not isinstance(raw, str):
         return None
     key = raw.strip().lower().rstrip(".")
     return _LOOKUP.get(key, raw.strip().lower())

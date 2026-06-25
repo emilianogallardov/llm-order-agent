@@ -22,21 +22,21 @@ _DEMO_EXTRACTION = {
     "lines": [
         {
             "raw_text": "50 lbs sharp cheddar from the main dairy co",
-            "product_id": "PRD-CHED-SHARP-WHITE",
             "product_family": "cheddar",
+            "stated_attributes": {"flavor": "sharp"},
+            "product_id": "PRD-CHED-SHARP-WHITE",
             "vendor_query": "the main dairy co",
             "quantity": 50,
             "uom": "lb",
-            "missing_attributes": [],
         },
         {
-            "raw_text": "20 cases romaine from the green produce distributor",
-            "product_id": "PRD-ROM-CLEANED",
+            "raw_text": "20 cases cleaned romaine from the green produce distributor",
             "product_family": "romaine",
+            "stated_attributes": {"form": "cleaned"},
+            "product_id": "PRD-ROM-CLEANED",
             "vendor_query": "the green produce distributor",
             "quantity": 20,
             "uom": "case",
-            "missing_attributes": [],
         },
     ]
 }
@@ -55,7 +55,10 @@ def main() -> int:
 
     if args.demo or not args.live:
         agent = OrderAgent(catalog=Catalog.load(), client=MockClient(lambda s, u: _DEMO_EXTRACTION))
-        order_text = args.order or "(demo order)"
+        order_text = args.order or (
+            "50 lbs sharp cheddar from the main dairy co, "
+            "20 cases cleaned romaine from the green produce distributor"
+        )
     else:
         if not args.order:
             parser.error("--live needs an order string")
