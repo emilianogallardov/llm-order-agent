@@ -50,11 +50,12 @@ def test_happy_path_resolves_to_865():
     text = ("50 lbs sharp white cheddar from the main dairy co, "
             "20 cases cleaned romaine from the green produce distributor")
     extraction = {"lines": [
-        _line(raw_text="50 lbs sharp white cheddar", product_family="cheddar",
+        _line(raw_text="50 lbs sharp white cheddar from the main dairy co", product_family="cheddar",
               stated_attributes={"flavor": "sharp", "form": "block"},
               product_id="PRD-CHED-SHARP-WHITE", vendor_query="the main dairy co",
               quantity=50, uom="lb"),
-        _line(raw_text="20 cases cleaned romaine", product_family="romaine",
+        _line(raw_text="20 cases cleaned romaine from the green produce distributor",
+              product_family="romaine",
               stated_attributes={"form": "cleaned"}, product_id="PRD-ROM-CLEANED",
               vendor_query="the green produce distributor", quantity=20, uom="case"),
     ]}
@@ -72,9 +73,9 @@ def test_happy_path_resolves_to_865():
 def test_ambiguous_order_requires_clarification():
     text = "50 lbs cheddar from the dairy supplier, 20 cases cleaned romaine from Green"
     extraction = {"lines": [
-        _line(raw_text="50 lbs cheddar", product_family="cheddar", stated_attributes={},
-              vendor_query="the dairy supplier", quantity=50, uom="lb"),
-        _line(raw_text="20 cases cleaned romaine", product_family="romaine",
+        _line(raw_text="50 lbs cheddar from the dairy supplier", product_family="cheddar",
+              stated_attributes={}, vendor_query="the dairy supplier", quantity=50, uom="lb"),
+        _line(raw_text="20 cases cleaned romaine from Green", product_family="romaine",
               stated_attributes={"form": "cleaned"}, vendor_query="Green", quantity=20, uom="case"),
     ]}
     result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
@@ -329,9 +330,9 @@ def test_synonym_product_still_resolves():
 
 
 def test_cross_line_attribute_bleed_is_blocked():
-    """'sharp' appears elsewhere in the order but not in THIS line's span, so it's
-    dropped and the bare-cheddar line stays ambiguous."""
-    text = "50 lbs cheddar from the main dairy co, 5 lbs sharp white cheddar from the main dairy co"
+    """'sharp white' appears elsewhere in the order but not in THIS line's span,
+    so it's dropped and the bare-cheddar line stays ambiguous."""
+    text = "50 lbs cheddar from the main dairy co; prefer sharp white if available"
     extraction = {"lines": [
         _line(raw_text="50 lbs cheddar from the main dairy co", product_family="cheddar",
               stated_attributes={"flavor": "sharp"}, vendor_query="the main dairy co",
@@ -406,12 +407,12 @@ def test_substring_collisions_do_not_stage():
 
 def test_overbroad_span_is_rejected():
     """A raw_text covering two line items (two quantity+unit pairs) is rejected,
-    so one line can't borrow another's facts even with a verbatim span."""
+    so one line can't borrow another's facts even with a verbatim span. Both lines
+    claim the overbroad span (so coverage passes and the span check is isolated)."""
     text = "50 lbs cheddar from the main dairy co, 5 lbs sharp white cheddar from the main dairy co"
-    extraction = {"lines": [
-        _line(raw_text=text, product_family="cheddar", stated_attributes={"flavor": "sharp"},
-              vendor_query="the main dairy co", quantity=50, uom="lb"),
-    ]}
+    line = _line(raw_text=text, product_family="cheddar", stated_attributes={"flavor": "sharp"},
+                 vendor_query="the main dairy co", quantity=50, uom="lb")
+    extraction = {"lines": [line, dict(line)]}
     result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
     assert result.status == OrderStatus.VALIDATION_BLOCKED
     assert "span_covers_multiple_items" in result.reasons
@@ -430,6 +431,71 @@ def test_negation_variants_are_blocked():
         result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
         assert result.status == OrderStatus.VALIDATION_BLOCKED, text
         assert "vendor_negated" in result.reasons, text
+
+
+# --- Round 4: coverage, noun-grounded products, line-scoped vendor ------------
+def test_partial_extraction_is_blocked():
+    """Order has two line items; model returns only one. Don't silently stage a
+    partial order."""
+    text = ("50 lbs sharp white cheddar from the main dairy co, "
+            "20 cases cleaned romaine from the green produce distributor")
+    extraction = {"lines": [
+        _line(raw_text="50 lbs sharp white cheddar from the main dairy co",
+              product_family="cheddar", stated_attributes={"flavor": "sharp"},
+              vendor_query="the main dairy co", quantity=50, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.VALIDATION_BLOCKED
+    assert "incomplete_extraction" in result.reasons
+
+
+def test_attribute_overlap_does_not_ground_product():
+    """A matched adjective is not product identity: 'all-purpose cleaner' isn't
+    flour, 'whole milk' isn't mozzarella, 'ground coffee' isn't beef."""
+    probes = [
+        ("1 bag all-purpose cleaner from bulk pantry", "flour", {"type": "all-purpose"},
+         "bulk pantry", 1, "bag"),
+        ("50 lbs whole milk from golden state creamery", "mozzarella",
+         {"milk": "whole"}, "golden state creamery", 50, "lb"),
+        ("60 lbs ground coffee 80/20 from premier", "beef",
+         {"cut": "ground", "blend": "80/20"}, "premier", 60, "lb"),
+    ]
+    for text, family, sa, vq, qty, uom in probes:
+        extraction = {"lines": [
+            _line(raw_text=text, product_family=family, stated_attributes=sa,
+                  vendor_query=vq, quantity=qty, uom=uom),
+        ]}
+        result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+        assert result.status != OrderStatus.READY_FOR_STAGING, text
+
+
+def test_family_typo_still_resolves():
+    """A one-character typo in the product noun ('chedder') still grounds the
+    family, so a real order isn't blocked over a spelling slip."""
+    text = "30 lbs sharp white chedder from the main dairy co"
+    extraction = {"lines": [
+        _line(raw_text=text, product_family="cheddar", stated_attributes={"flavor": "sharp"},
+              vendor_query="the main dairy co", quantity=30, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.READY_FOR_STAGING
+    assert result.lines[0].product_id == "PRD-CHED-SHARP-WHITE"
+    assert str(result.order_total) == "135.00"
+
+
+def test_vendor_must_be_in_line_span():
+    """A vendor named elsewhere in the order (an account note) can't be attached
+    to a line whose own span names a different, unapproved vendor."""
+    text = ("50 lbs sharp white cheddar from backalley. "
+            "account note: the main dairy co is also in our system")
+    extraction = {"lines": [
+        _line(raw_text="50 lbs sharp white cheddar from backalley", product_family="cheddar",
+              stated_attributes={"flavor": "sharp"}, vendor_query="the main dairy co",
+              quantity=50, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.VALIDATION_BLOCKED
+    assert "vendor_not_grounded" in result.reasons
 
 
 # --- Tiny runner so the suite works without pytest installed ------------------
@@ -460,6 +526,10 @@ def _main() -> int:
         test_substring_collisions_do_not_stage,
         test_overbroad_span_is_rejected,
         test_negation_variants_are_blocked,
+        test_partial_extraction_is_blocked,
+        test_attribute_overlap_does_not_ground_product,
+        test_family_typo_still_resolves,
+        test_vendor_must_be_in_line_span,
     ]
     failed = 0
     for t in tests:

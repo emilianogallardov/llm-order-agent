@@ -63,6 +63,19 @@ def resolve_order(
             reasons=["empty_order"],
         )
 
+    # Coverage: every quantity+unit the buyer wrote must produce a line. If the
+    # model extracted fewer lines than the order has quantity+unit mentions, it
+    # silently dropped an item. Fail closed rather than stage a partial order.
+    total_mentions = quantity_uom_mentions(order_text)
+    if total_mentions and len(extracted.lines) < total_mentions:
+        return ResolvedOrder(
+            status=OrderStatus.VALIDATION_BLOCKED,
+            lines=[],
+            order_total=None,
+            blocked_fields=["order"],
+            reasons=["incomplete_extraction"],
+        )
+
     as_of = as_of or date.today().isoformat()
 
     resolved_lines: list[ResolvedLine] = []
@@ -124,7 +137,6 @@ def _resolve_line(
     # line items lets one line's facts bleed into another, so reject it.
     if quantity_uom_mentions(span) > 1:
         raise _LineBlock("block", "line", "span_covers_multiple_items")
-    text_lower = order_text.lower()
 
     # 1. Quantity: present, finite, positive.
     if line.quantity is None:
@@ -181,19 +193,20 @@ def _resolve_line(
         raise _LineBlock("clarify", f"{family} variant", reason)
     product = matches[0]
 
-    # 5. Product identity must be grounded in the span: the family name, a
-    #    product-name word, a catalog keyword/alias, or a matched attribute has to
-    #    appear. Stops a model from naming a single-SKU family the buyer never did.
-    if not _product_grounded(family, product, effective, span):
+    # 5. Product identity must be grounded by a NOUN, not by attribute overlap:
+    #    the family name (inflected) or an explicit catalog keyword has to appear
+    #    in the span. A matched adjective ("all-purpose", "whole milk", "ground")
+    #    is not enough, so "all-purpose cleaner" can't pass as flour.
+    if not _product_grounded(family, product, span):
         raise _LineBlock("clarify", f"{family} variant", "product_not_grounded")
 
-    # 6. Vendor: the reference must appear in the order (catches a model that
-    #    swaps an unapproved vendor for an approved one) and must not be negated
-    #    ("not premier"), then resolved by id through the approved-alias table.
+    # 6. Vendor: the reference must appear in THIS line's span (catches a model
+    #    that swaps in a vendor named elsewhere in the order, e.g. an account
+    #    note) and must not be negated ("not premier"), then resolved by id.
     vendor_query = line.vendor_query or ""
-    if vendor_query and not in_text(vendor_query, text_lower):
+    if vendor_query and not in_text(vendor_query, span):
         raise _LineBlock("block", "supplier entity", "vendor_not_grounded")
-    if vendor_query and _is_negated(vendor_query, text_lower):
+    if vendor_query and _is_negated(vendor_query, span):
         raise _LineBlock("block", "supplier entity", "vendor_negated")
 
     alias_matches = catalog.resolve_vendor_alias(vendor_query)
@@ -247,19 +260,44 @@ def _resolve_line(
     )
 
 
-def _product_grounded(family: str, product: dict, effective: dict, span: str) -> bool:
-    """The resolved product must be identifiable from the span: a matched
-    attribute, the family name, a word from the product name, or a catalog
-    keyword/alias (e.g. 'evoo' for olive oil). Otherwise the model named a
-    product the buyer didn't, and we clarify instead of staging it."""
-    if effective:  # an attribute was matched from the span
+def _product_grounded(family: str, product: dict, span: str) -> bool:
+    """The product must be named by a NOUN in the span: the family name (allowing
+    inflection "tomato"->"tomatoes" and a single typo "chedder"->"cheddar") or an
+    explicit catalog keyword ("evoo"). Matched attributes/adjectives do NOT count,
+    so "all-purpose cleaner" or "whole milk" can't masquerade as flour/mozzarella
+    (no word in those spans is within one edit of the family noun)."""
+    if attr_in_text(family, span):
         return True
-    if in_text(family, span):
-        return True
-    for word in str(product.get("name", "")).replace(",", " ").split():
-        if len(word) > 3 and in_text(word, span):
-            return True
+    fam = family.lower()
+    if len(fam) >= 5:
+        for word in re.findall(r"[a-z]+", span):
+            if len(word) >= 5 and _within_one_edit(word, fam):
+                return True
     return any(in_text(kw, span) for kw in product.get("keywords", []))
+
+
+def _within_one_edit(a: str, b: str) -> bool:
+    """True if a and b differ by at most one insertion, deletion, or substitution."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        return sum(c1 != c2 for c1, c2 in zip(a, b)) == 1
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    i = j = diff = 0
+    while i < la and j < lb:
+        if a[i] != b[j]:
+            diff += 1
+            if diff > 1:
+                return False
+            j += 1
+        else:
+            i += 1
+            j += 1
+    return True
 
 
 def _is_negated(vendor_query: str, text_lower: str) -> bool:

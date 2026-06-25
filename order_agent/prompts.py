@@ -45,7 +45,7 @@ Follow these rules exactly:
 {
   "lines": [
     {
-      "raw_text": "<the exact contiguous snippet of the order this line came from, copied verbatim, including its quantity and unit>",
+      "raw_text": "<the exact contiguous snippet of the order this line came from, copied verbatim, including its quantity, unit, and vendor>",
       "product_family": "<e.g. cheddar, romaine, or null>",
       "stated_attributes": { "<attr>": "<value the buyer stated>" },
       "product_id": "<catalog product id guess or null>",
