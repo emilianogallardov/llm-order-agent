@@ -176,21 +176,21 @@ ANTHROPIC_API_KEY=... MODEL_ORDER_EXTRACTION=claude-sonnet-4-6 python stress_tes
 
 ## Limits (what grounding can't close, and the honest fix)
 
-Deterministic text-grounding tightens the boundary a lot, but it can't make a
-free-text pipeline fully adversary-proof on its own. Known residual cases:
+Deterministic grounding closes a lot: word-bounded matching (so "oil" can't match
+"foil" or "premier" match "premiere"), per-line span checks, rejection of spans
+that cover two line items, common vendor-negation patterns ("not premier", "do
+not use premier"), unsupported-constraint detection, and catalog keyword aliases
+so synonyms like "evoo" still resolve. What it still can't do alone:
 
-- **Negation.** "from backalley, not premier" still contains the word "premier",
-  so a substring/word check can't tell it's negated.
+- **Arbitrary negation / natural language.** Common patterns are blocked, but
+  "we broke up with Premier last year, use anyone else" is beyond substring rules.
 - **Omitted constraint.** If the buyer says "organic" and the model simply drops
-  the attribute, there's nothing in the extraction to catch.
-- **Self-consistent span attribution.** Quantity+unit are grounded against the
-  model's own per-line `raw_text` span, which defeats naive cross-line bleed. A
-  model that returns a span deliberately covering two lines can still misattribute.
-- **Synonym/abbreviation products.** "evoo" resolves to olive oil even though the
-  word "oil" never appears, so product identity isn't hard-grounded (doing so
-  would reject legitimate phrasing).
+  the attribute entirely, there's nothing in the extraction to catch.
+- **A lie inside one honest-looking span.** Quantity+unit ground against a single
+  per-line span, but if a model returns a verbatim one-line span and still
+  misreads within it, deterministic checks can't see intent.
 
-The real fix for all four is the same: **constrained extraction that returns
+The real fix for the residue is the same: **constrained extraction that returns
 character offsets** (so the validator checks the quantity token actually sits next
 to the product token), plus a **confidence score that routes low-confidence lines
 to human review**. This repo deliberately stops at the deterministic layer and

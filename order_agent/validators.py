@@ -24,7 +24,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from .catalog import Catalog
-from .grounding import in_text, line_span, quantity_uom_grounded
+from .grounding import attr_in_text, in_text, line_span, quantity_uom_grounded, quantity_uom_mentions
 from .uom import canonicalize
 from .schema import (
     ExtractedLine,
@@ -120,6 +120,10 @@ def _resolve_line(
     span = line_span(line.raw_text, order_text)
     if span is None:
         raise _LineBlock("block", "line", "line_span_unverifiable")
+    # An honest line span mentions exactly one quantity+unit. A span covering two
+    # line items lets one line's facts bleed into another, so reject it.
+    if quantity_uom_mentions(span) > 1:
+        raise _LineBlock("block", "line", "span_covers_multiple_items")
     text_lower = order_text.lower()
 
     # 1. Quantity: present, finite, positive.
@@ -161,12 +165,12 @@ def _resolve_line(
     # really asked for must block, not be silently dropped. Catch it whether the
     # model put the word in the key or the value.
     for key, val in stated.items():
-        if key not in schema_keys and (in_text(key, span) or in_text(val, span)):
+        if key not in schema_keys and (in_text(key, span) or attr_in_text(val, span)):
             raise _LineBlock("clarify", f"{family} attribute", f"unsupported_constraint:{key}")
     # Keep only catalog attributes whose value the span supports. A swapped
     # attribute (span "sharp", model "mild") is dropped, making the variant
     # ambiguous and forcing clarification instead of a wrong SKU.
-    effective = {k: v for k, v in stated.items() if k in schema_keys and in_text(v, span)}
+    effective = {k: v for k, v in stated.items() if k in schema_keys and attr_in_text(v, span)}
 
     matches = catalog.match_products_by_attributes(family, effective)
     if len(matches) == 0:
@@ -250,19 +254,22 @@ def _product_grounded(family: str, product: dict, effective: dict, span: str) ->
     product the buyer didn't, and we clarify instead of staging it."""
     if effective:  # an attribute was matched from the span
         return True
-    if family.lower() in span:
+    if in_text(family, span):
         return True
     for word in str(product.get("name", "")).replace(",", " ").split():
-        if len(word) > 3 and word.lower() in span:
+        if len(word) > 3 and in_text(word, span):
             return True
-    return any(str(kw).lower() in span for kw in product.get("keywords", []))
+    return any(in_text(kw, span) for kw in product.get("keywords", []))
 
 
 def _is_negated(vendor_query: str, text_lower: str) -> bool:
-    """True if the vendor reference is negated in the text ('not premier',
-    'avoid premier'), which substring grounding alone would otherwise miss."""
+    """True if the vendor reference is negated in the text ('not premier', 'not
+    from premier', 'do not use premier', 'avoid premier'). Allows a few filler
+    words between the negation and the vendor. Substring grounding alone misses
+    this; full natural-language negation is out of scope (see README)."""
     v = re.escape(vendor_query.strip().lower())
-    return bool(re.search(rf"\b(?:not|no|avoid|except|never)\s+{v}\b", text_lower))
+    neg = r"(?:do\s+not|don'?t|not|no|avoid|except|never|skip)"
+    return bool(re.search(rf"\b{neg}\b[a-z\s,]{{0,15}}(?<![a-z]){v}(?![a-z])", text_lower))
 
 
 def _other_uom(catalog: Catalog, product_id: str, parent_id: str) -> str:

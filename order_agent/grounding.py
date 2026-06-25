@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 
-from .uom import synonyms_for
+from .uom import all_synonyms, synonyms_for
 
 # spelled small numbers + articles, so "a case" / "two cases" ground to 1 / 2
 _WORD_NUMBERS: dict[int, list[str]] = {
@@ -32,9 +32,44 @@ _WORD_NUMBERS: dict[int, list[str]] = {
 
 
 def in_text(value: object, text: str) -> bool:
-    """True if the value's text appears (substring, case-insensitive) in text."""
+    """True if the value appears as a whole word/phrase in text (case-insensitive).
+    Word boundaries matter: "oil" must not match inside "foil", "premier" must not
+    match "premiere", "sharp" must not match "sharpie". Boundaries are non
+    alphanumeric, so hyphens and slashes ("extra-virgin", "80/20") still match."""
     v = str(value).strip().lower()
-    return bool(v) and v in text.lower()
+    if not v:
+        return False
+    return re.search(rf"(?<![a-z0-9]){re.escape(v)}(?![a-z0-9])", text.lower()) is not None
+
+
+# common inflectional endings, so an attribute value "shred" matches "shredded"
+# and "shreds" but NOT an unrelated word like "sharpie" or "premiere"
+_INFLECT = r"(?:s|es|ed|d|ded|ding|ing)?"
+
+
+def attr_in_text(value: object, text: str) -> bool:
+    """Like in_text, but tolerant of inflection on attribute values: "shred"
+    grounds "shredded"/"shreds". Still boundary-guarded, so "sharp" won't match
+    "sharpie" and "roma" won't match "aroma"."""
+    v = str(value).strip().lower()
+    if not v:
+        return False
+    return re.search(rf"(?<![a-z0-9]){re.escape(v)}{_INFLECT}(?![a-z0-9])", text.lower()) is not None
+
+
+# All unit spellings, longest first so "lbs" is tried before "lb" in alternation.
+_UNITS_ALT = "|".join(re.escape(s) for s in sorted(all_synonyms(), key=len, reverse=True))
+_NUM_ALT = (
+    r"(?<![a-z0-9])\d+(?:\.\d+)?(?![a-z0-9])"
+    r"|\b(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\b"
+)
+_QTY_UOM_RE = re.compile(rf"(?:{_NUM_ALT})\s*(?:{_UNITS_ALT})(?![a-z0-9])")
+
+
+def quantity_uom_mentions(text: str) -> int:
+    """How many distinct quantity+unit pairs the text mentions ("50 lbs", "a
+    case"). Used to reject an overbroad raw_text span that covers two line items."""
+    return len(_QTY_UOM_RE.findall(text.lower()))
 
 
 def _norm(s: str) -> str:

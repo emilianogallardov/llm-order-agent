@@ -381,6 +381,57 @@ def test_negated_vendor_is_blocked():
     assert "vendor_negated" in result.reasons
 
 
+# --- Round 3: word boundaries, overbroad spans, negation variants -------------
+def test_substring_collisions_do_not_stage():
+    """Grounding is word-bounded: 'oil' must not match 'foil', 'roma' not 'aroma',
+    'sharp' not 'sharpie', 'premier' not 'premiere'."""
+    probes = [
+        # text, family, stated, vendor_query, qty, uom
+        ("1 case foil tins from restaurant depot", "oil", {}, "restaurant depot", 1, "case"),
+        ("1 case Oliver labels from restaurant depot", "oil", {}, "restaurant depot", 1, "case"),
+        ("1 case aroma candles from sunfresh", "tomato", {"type": "roma"}, "sunfresh", 1, "case"),
+        ("50 lbs sharpie markers from the main dairy co", "cheddar", {"flavor": "sharp"},
+         "the main dairy co", 50, "lb"),
+        ("60 lbs ground beef 80/20 from premiere packaging", "beef",
+         {"cut": "ground", "blend": "80/20"}, "premier", 60, "lb"),
+    ]
+    for text, family, sa, vq, qty, uom in probes:
+        extraction = {"lines": [
+            _line(raw_text=text, product_family=family, stated_attributes=sa,
+                  vendor_query=vq, quantity=qty, uom=uom),
+        ]}
+        result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+        assert result.status != OrderStatus.READY_FOR_STAGING, text
+
+
+def test_overbroad_span_is_rejected():
+    """A raw_text covering two line items (two quantity+unit pairs) is rejected,
+    so one line can't borrow another's facts even with a verbatim span."""
+    text = "50 lbs cheddar from the main dairy co, 5 lbs sharp white cheddar from the main dairy co"
+    extraction = {"lines": [
+        _line(raw_text=text, product_family="cheddar", stated_attributes={"flavor": "sharp"},
+              vendor_query="the main dairy co", quantity=50, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.VALIDATION_BLOCKED
+    assert "span_covers_multiple_items" in result.reasons
+
+
+def test_negation_variants_are_blocked():
+    for text in (
+        "60 lbs ground beef 80/20 from backalley, not from premier",
+        "60 lbs ground beef 80/20, do not use premier",
+    ):
+        extraction = {"lines": [
+            _line(raw_text=text, product_family="beef",
+                  stated_attributes={"cut": "ground", "blend": "80/20"},
+                  vendor_query="premier", quantity=60, uom="lb"),
+        ]}
+        result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+        assert result.status == OrderStatus.VALIDATION_BLOCKED, text
+        assert "vendor_negated" in result.reasons, text
+
+
 # --- Tiny runner so the suite works without pytest installed ------------------
 def _main() -> int:
     tests = [
@@ -406,6 +457,9 @@ def _main() -> int:
         test_unverifiable_span_fails_closed,
         test_unsupported_constraint_caught_by_value,
         test_negated_vendor_is_blocked,
+        test_substring_collisions_do_not_stage,
+        test_overbroad_span_is_rejected,
+        test_negation_variants_are_blocked,
     ]
     failed = 0
     for t in tests:
