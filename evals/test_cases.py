@@ -302,6 +302,85 @@ def test_uom_mismatch_is_blocked():
     assert "uom_mismatch" in result.reasons
 
 
+# --- Round 2: product identity, span integrity, negation ----------------------
+def test_product_identity_must_be_grounded():
+    """Model invents a single-SKU family the buyer never named -> clarify."""
+    text = "1 case from restaurant depot"
+    extraction = {"lines": [
+        _line(raw_text=text, product_family="oil", product_id="PRD-OIL-EVOO",
+              vendor_query="restaurant depot", quantity=1, uom="case"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.CLARIFICATION_REQUIRED
+    assert any("product_not_grounded" in r for r in result.reasons)
+
+
+def test_synonym_product_still_resolves():
+    """'evoo' isn't the word 'oil', but a catalog keyword grounds it -> stages."""
+    text = "a case of evoo from restaurant depot"
+    extraction = {"lines": [
+        _line(raw_text=text, product_family="oil", product_id="PRD-OIL-EVOO",
+              vendor_query="restaurant depot", quantity=1, uom="case"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.READY_FOR_STAGING
+    assert result.lines[0].product_id == "PRD-OIL-EVOO"
+    assert str(result.order_total) == "72.00"
+
+
+def test_cross_line_attribute_bleed_is_blocked():
+    """'sharp' appears elsewhere in the order but not in THIS line's span, so it's
+    dropped and the bare-cheddar line stays ambiguous."""
+    text = "50 lbs cheddar from the main dairy co, 5 lbs sharp white cheddar from the main dairy co"
+    extraction = {"lines": [
+        _line(raw_text="50 lbs cheddar from the main dairy co", product_family="cheddar",
+              stated_attributes={"flavor": "sharp"}, vendor_query="the main dairy co",
+              quantity=50, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.CLARIFICATION_REQUIRED
+    assert any("ambiguous_variant" in r for r in result.reasons)
+
+
+def test_unverifiable_span_fails_closed():
+    """A raw_text that isn't a verbatim slice of the order can't be trusted."""
+    text = "50 lbs sharp white cheddar from the main dairy co"
+    extraction = {"lines": [
+        _line(raw_text="100 lbs mild cheddar nobody ordered", product_family="cheddar",
+              stated_attributes={"flavor": "sharp"}, vendor_query="the main dairy co",
+              quantity=50, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.VALIDATION_BLOCKED
+    assert "line_span_unverifiable" in result.reasons
+
+
+def test_unsupported_constraint_caught_by_value():
+    """Model hides 'organic' in the value of a non-catalog key -> still blocks."""
+    text = "50 lbs organic sharp white cheddar from the main dairy co"
+    extraction = {"lines": [
+        _line(raw_text=text, product_family="cheddar",
+              stated_attributes={"flavor": "sharp", "certification": "organic"},
+              vendor_query="the main dairy co", quantity=50, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.CLARIFICATION_REQUIRED
+    assert any("unsupported_constraint" in r for r in result.reasons)
+
+
+def test_negated_vendor_is_blocked():
+    """'backalley, not premier' -> the word 'premier' is present but negated."""
+    text = "60 lbs ground beef 80/20 from backalley, not premier"
+    extraction = {"lines": [
+        _line(raw_text=text, product_family="beef",
+              stated_attributes={"cut": "ground", "blend": "80/20"},
+              vendor_query="premier", quantity=60, uom="lb"),
+    ]}
+    result = OrderAgent(catalog=_catalog(), client=_mock(extraction)).process(text)
+    assert result.status == OrderStatus.VALIDATION_BLOCKED
+    assert "vendor_negated" in result.reasons
+
+
 # --- Tiny runner so the suite works without pytest installed ------------------
 def _main() -> int:
     tests = [
@@ -321,6 +400,12 @@ def _main() -> int:
         test_broken_supplier_hierarchy_fails_closed,
         test_uom_synonyms_are_canonicalized,
         test_uom_mismatch_is_blocked,
+        test_product_identity_must_be_grounded,
+        test_synonym_product_still_resolves,
+        test_cross_line_attribute_bleed_is_blocked,
+        test_unverifiable_span_fails_closed,
+        test_unsupported_constraint_caught_by_value,
+        test_negated_vendor_is_blocked,
     ]
     failed = 0
     for t in tests:

@@ -93,6 +93,7 @@
       "name": "Olive Oil, Extra Virgin",
       "family": "oil",
       "attributes": { "type": "extra-virgin" },
+      "keywords": ["evoo", "olive oil", "olive"],
       "uom": "case",
       "vendor_id": "SUP-RESTDEPOT"
     }

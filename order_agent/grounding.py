@@ -37,15 +37,20 @@ def in_text(value: object, text: str) -> bool:
     return bool(v) and v in text.lower()
 
 
-def line_span(raw_text: object, order_text: str) -> str:
-    """The slice of the order this line came from. If the model's raw_text is a
-    real substring of the order, we ground against just that span (so a quantity
-    from one line can't borrow words from another). Otherwise we fall back to the
-    whole order, which is no weaker than grounding against everything."""
-    order_lower = order_text.lower()
-    if isinstance(raw_text, str) and raw_text.strip() and raw_text.lower() in order_lower:
-        return raw_text.lower()
-    return order_lower
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", s.strip().lower())
+
+
+def line_span(raw_text: object, order_text: str) -> str | None:
+    """The slice of the order this line came from. The model's raw_text must be a
+    verbatim substring of the order (whitespace/case-normalized); then we ground
+    that line's facts against just that span, so one line can't borrow a number or
+    attribute from another. If raw_text isn't a real substring we return None and
+    the caller fails closed, rather than weakening to whole-order grounding."""
+    if not isinstance(raw_text, str) or not raw_text.strip():
+        return None
+    raw_n, order_n = _norm(raw_text), _norm(order_text)
+    return raw_n if raw_n and raw_n in order_n else None
 
 
 def _quantity_forms(qty) -> list[str]:

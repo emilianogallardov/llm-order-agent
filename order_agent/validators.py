@@ -18,6 +18,7 @@ the pipeline or leak a half-built payload.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
@@ -110,14 +111,16 @@ def resolve_order(
 def _resolve_line(
     line: ExtractedLine, catalog: Catalog, order_text: str, as_of: str
 ) -> ResolvedLine:
-    # Ground model-extracted facts against the order text. Quantity+unit are
-    # grounded against the tight per-line span (the model's raw_text, if it's a
-    # real substring) so one line can't borrow a number from another. Vendor and
-    # attributes are grounded against the whole order, since a tight product span
-    # often won't contain the vendor clause.
+    # Ground model-extracted facts against the per-line span: the model's raw_text
+    # must be a verbatim slice of the order, and quantity, unit, attributes, and
+    # product identity are all checked against THAT slice, so one line can't borrow
+    # a fact from another. An unverifiable span fails closed. The vendor reference
+    # is grounded against the whole order (the product span may omit the vendor
+    # clause), with a negation guard.
     span = line_span(line.raw_text, order_text)
+    if span is None:
+        raise _LineBlock("block", "line", "line_span_unverifiable")
     text_lower = order_text.lower()
-    grounded = bool(order_text)
 
     # 1. Quantity: present, finite, positive.
     if line.quantity is None:
@@ -137,10 +140,10 @@ def _resolve_line(
     if not uom:
         raise _LineBlock("block", "uom", "missing_uom")
 
-    # 3. Quantity and unit must be PAIRED in the text ("50 lbs", "a case").
+    # 3. Quantity and unit must be PAIRED in the span ("50 lbs", "a case").
     #    Grounding the pair catches inflation (5 can't match inside 50) and unit
     #    swaps (model says "lb" when the buyer said "cases").
-    if grounded and not quantity_uom_grounded(quantity, uom, span):
+    if not quantity_uom_grounded(quantity, uom, span):
         raise _LineBlock("block", "quantity", "quantity_uom_not_grounded")
 
     # 4. Resolve the product by ATTRIBUTES, grounded in the span. The model's
@@ -154,18 +157,16 @@ def _resolve_line(
 
     stated = line.stated_attributes if isinstance(line.stated_attributes, dict) else {}
     schema_keys = catalog.family_attribute_keys(family)
-    if grounded:
-        # A stated constraint the catalog can't express (e.g. "organic") that the
-        # buyer really asked for must block, not be silently dropped.
-        for key in stated:
-            if key not in schema_keys and in_text(key, text_lower):
-                raise _LineBlock("clarify", f"{family} attribute", f"unsupported_constraint:{key}")
-        # Keep only catalog attributes whose value the text supports. A swapped
-        # attribute (text "sharp", model "mild") is dropped, making the variant
-        # ambiguous and forcing clarification instead of a wrong SKU.
-        effective = {k: v for k, v in stated.items() if k in schema_keys and in_text(v, text_lower)}
-    else:
-        effective = {k: v for k, v in stated.items() if k in schema_keys}
+    # A constraint the catalog can't express (e.g. "organic") that the buyer
+    # really asked for must block, not be silently dropped. Catch it whether the
+    # model put the word in the key or the value.
+    for key, val in stated.items():
+        if key not in schema_keys and (in_text(key, span) or in_text(val, span)):
+            raise _LineBlock("clarify", f"{family} attribute", f"unsupported_constraint:{key}")
+    # Keep only catalog attributes whose value the span supports. A swapped
+    # attribute (span "sharp", model "mild") is dropped, making the variant
+    # ambiguous and forcing clarification instead of a wrong SKU.
+    effective = {k: v for k, v in stated.items() if k in schema_keys and in_text(v, span)}
 
     matches = catalog.match_products_by_attributes(family, effective)
     if len(matches) == 0:
@@ -176,11 +177,20 @@ def _resolve_line(
         raise _LineBlock("clarify", f"{family} variant", reason)
     product = matches[0]
 
-    # 5. Vendor: the reference must be grounded in the span (catches a model that
-    #    swaps an unapproved vendor for an approved one), then resolved by id.
+    # 5. Product identity must be grounded in the span: the family name, a
+    #    product-name word, a catalog keyword/alias, or a matched attribute has to
+    #    appear. Stops a model from naming a single-SKU family the buyer never did.
+    if not _product_grounded(family, product, effective, span):
+        raise _LineBlock("clarify", f"{family} variant", "product_not_grounded")
+
+    # 6. Vendor: the reference must appear in the order (catches a model that
+    #    swaps an unapproved vendor for an approved one) and must not be negated
+    #    ("not premier"), then resolved by id through the approved-alias table.
     vendor_query = line.vendor_query or ""
-    if grounded and vendor_query and not in_text(vendor_query, text_lower):
+    if vendor_query and not in_text(vendor_query, text_lower):
         raise _LineBlock("block", "supplier entity", "vendor_not_grounded")
+    if vendor_query and _is_negated(vendor_query, text_lower):
+        raise _LineBlock("block", "supplier entity", "vendor_negated")
 
     alias_matches = catalog.resolve_vendor_alias(vendor_query)
     if len(alias_matches) == 0:
@@ -195,13 +205,13 @@ def _resolve_line(
     if product.get("vendor_id") != vendor["id"]:
         raise _LineBlock("block", "supplier entity", "vendor_product_mismatch")
 
-    # 6. Parent entity: contracts bind to the parent, which must resolve even if
+    # 7. Parent entity: contracts bind to the parent, which must resolve even if
     #    the child vendor was reorganized. A broken chain fails closed.
     parent_id = catalog.parent_vendor_id(vendor["id"])
     if parent_id is None:
         raise _LineBlock("block", "supplier entity", "supplier_parent_entity_unresolved")
 
-    # 7. Contract pricing by canonical ids + exact UOM, effective on/before today.
+    # 8. Contract pricing by canonical ids + exact UOM, effective on/before today.
     #    Duplicate active contracts at the same effective date are a genuine
     #    ambiguity: refuse to price rather than pick by list order.
     winners = catalog.active_contracts(product["id"], parent_id, uom, as_of=as_of)
@@ -214,7 +224,7 @@ def _resolve_line(
         raise _LineBlock("block", "contract", "ambiguous_contract")
     contract = winners[0]
 
-    # 8. Deterministic money. Decimal in, Decimal out, rounded once.
+    # 9. Deterministic money. Decimal in, Decimal out, rounded once.
     unit_price = Decimal(contract["unit_price"])
     line_total = (quantity * unit_price).quantize(_CENTS, rounding=ROUND_HALF_UP)
 
@@ -231,6 +241,28 @@ def _resolve_line(
         contract_id=contract["contract_id"],
         line_total=line_total,
     )
+
+
+def _product_grounded(family: str, product: dict, effective: dict, span: str) -> bool:
+    """The resolved product must be identifiable from the span: a matched
+    attribute, the family name, a word from the product name, or a catalog
+    keyword/alias (e.g. 'evoo' for olive oil). Otherwise the model named a
+    product the buyer didn't, and we clarify instead of staging it."""
+    if effective:  # an attribute was matched from the span
+        return True
+    if family.lower() in span:
+        return True
+    for word in str(product.get("name", "")).replace(",", " ").split():
+        if len(word) > 3 and word.lower() in span:
+            return True
+    return any(str(kw).lower() in span for kw in product.get("keywords", []))
+
+
+def _is_negated(vendor_query: str, text_lower: str) -> bool:
+    """True if the vendor reference is negated in the text ('not premier',
+    'avoid premier'), which substring grounding alone would otherwise miss."""
+    v = re.escape(vendor_query.strip().lower())
+    return bool(re.search(rf"\b(?:not|no|avoid|except|never)\s+{v}\b", text_lower))
 
 
 def _other_uom(catalog: Catalog, product_id: str, parent_id: str) -> str:
