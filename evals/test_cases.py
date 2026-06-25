@@ -181,6 +181,30 @@ def test_broken_supplier_hierarchy_fails_closed():
     assert "supplier_parent_entity_unresolved" in result.reasons
 
 
+def test_uom_synonyms_are_canonicalized():
+    """Humans type 'lbs'/'cases'; the catalog stores 'lb'/'case'. Synonyms must
+    canonicalize so a correct order isn't blocked over plurals."""
+    extraction = {
+        "lines": [
+            {
+                "raw_text": "50 pounds sharp cheddar from the main dairy co",
+                "product_id": "PRD-CHED-SHARP-WHITE",
+                "product_family": "cheddar",
+                "vendor_query": "the main dairy co",
+                "quantity": 50,
+                "uom": "lbs",  # synonym of the contract's "lb"
+                "missing_attributes": [],
+            }
+        ]
+    }
+    agent = OrderAgent(catalog=_catalog(), client=_mock(extraction))
+    result = agent.process("(order text)")
+
+    assert result.status == OrderStatus.READY_FOR_STAGING
+    assert result.lines[0].uom == "lb"            # canonicalized
+    assert str(result.order_total) == "225.00"
+
+
 def test_uom_mismatch_is_blocked():
     """A weight price must never be multiplied by a case count. Wrong UOM blocks."""
     extraction = {
@@ -210,6 +234,7 @@ def _main() -> int:
         test_ambiguous_order_requires_clarification,
         test_supplier_rename_survives_via_canonical_ids,
         test_broken_supplier_hierarchy_fails_closed,
+        test_uom_synonyms_are_canonicalized,
         test_uom_mismatch_is_blocked,
     ]
     failed = 0

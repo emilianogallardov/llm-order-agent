@@ -55,7 +55,7 @@ free text ─▶ model selector ─▶ LLM (proposes) ─▶ deterministic valid
 | **Model selector** | `order_agent/models.py`, `tasks.py`, `selector.py` | Declarative model registry + task-based routing. Callers ask for a *task* (`order_extraction`); the selector resolves model, fallback, and any env override. |
 | **Prompt** | `order_agent/prompts.py` | Constrains the model to the catalog, forces strict JSON, tells it to flag ambiguity and never compute prices. |
 | **LLM client** | `order_agent/llm.py` | One interface, provider chosen from model metadata (OpenAI / Anthropic). `MockClient` makes the pipeline runnable offline and in tests. |
-| **Validators** | `order_agent/validators.py` | The decision layer: quantity/UOM checks, alias→vendor resolution by id, parent-entity resolution, contract pricing, `Decimal` math, fail-closed. |
+| **Validators** | `order_agent/validators.py`, `uom.py` | The decision layer: quantity/UOM checks, UOM canonicalization (`lbs`→`lb`), alias→vendor resolution by id, parent-entity resolution, contract pricing, `Decimal` math, fail-closed. |
 | **Catalog** | `order_agent/catalog.py`, `catalog.json` | Products, vendors (with parent hierarchy), approved aliases, contracts. Everything keyed by canonical id, never display name. |
 
 ### The model selector
@@ -79,6 +79,9 @@ MODEL_ORDER_EXTRACTION=gpt-4o python run.py --live "..."
 
 ### Why the design choices matter
 
+- **Canonicalize units; never convert them.** `lbs`/`pounds`/`cases` collapse to
+  one token (`lb`/`case`) so real phrasing resolves, but a per-lb price is never
+  multiplied by a case count: different physical units stay distinct and block.
 - **Display names drift; ids don't.** Vendors get renamed and reorganized.
   Contracts bind to a stable parent id, so a rename can't silently break pricing.
 - **`Decimal`, never `float`.** Currency is fixed-decimal, rounded once, per line.
@@ -126,9 +129,24 @@ PASS  test_happy_path_resolves_to_865
 PASS  test_ambiguous_order_requires_clarification
 PASS  test_supplier_rename_survives_via_canonical_ids
 PASS  test_broken_supplier_hierarchy_fails_closed
+PASS  test_uom_synonyms_are_canonicalized
 PASS  test_uom_mismatch_is_blocked
 
-5/5 passed
+6/6 passed
+```
+
+### Live stress test
+
+`stress_test.py` runs nine deliberately sloppy human messages ("yo can u throw
+together 50 lbs of that sharp white cheddar from the main dairy co...") through
+the **real model** against a catalog full of lookalike variants and competing
+vendors, asserting the system selects the right SKU + vendor and blocks/clarifies
+when it should. This is what caught the UOM-canonicalization gap above.
+
+```bash
+pip install anthropic
+ANTHROPIC_API_KEY=... MODEL_ORDER_EXTRACTION=claude-sonnet-4-6 python stress_test.py
+# -> 9/9 live cases passed
 ```
 
 ## Project layout

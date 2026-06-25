@@ -25,68 +25,120 @@
       "vendor_id": "SUP-DAIRYCORP"
     },
     {
+      "id": "PRD-MOZZ-WM-SHRED",
+      "name": "Mozzarella, Whole Milk Shred",
+      "family": "mozzarella",
+      "attributes": { "milk": "whole", "form": "shred" },
+      "uom": "lb",
+      "vendor_id": "SUP-GOLDENSTATE"
+    },
+    {
       "id": "PRD-ROM-CLEANED",
       "name": "Romaine Leaves, Cleaned",
       "family": "romaine",
       "attributes": { "form": "cleaned" },
       "uom": "case",
       "vendor_id": "SUP-FRESHGREEN"
+    },
+    {
+      "id": "PRD-ROM-HEARTS",
+      "name": "Romaine Hearts",
+      "family": "romaine",
+      "attributes": { "form": "hearts" },
+      "uom": "case",
+      "vendor_id": "SUP-VALLEYHARVEST"
+    },
+    {
+      "id": "PRD-ICEBERG",
+      "name": "Iceberg Lettuce, Whole Head",
+      "family": "iceberg",
+      "attributes": { "form": "whole-head" },
+      "uom": "case",
+      "vendor_id": "SUP-FRESHGREEN"
+    },
+    {
+      "id": "PRD-TOM-ROMA",
+      "name": "Roma Tomatoes",
+      "family": "tomato",
+      "attributes": { "type": "roma" },
+      "uom": "case",
+      "vendor_id": "SUP-SUNFRESH"
+    },
+    {
+      "id": "PRD-CHKN-BRST-BNLS",
+      "name": "Chicken Breast, Boneless Skinless",
+      "family": "chicken",
+      "attributes": { "cut": "breast", "bone": "boneless" },
+      "uom": "lb",
+      "vendor_id": "SUP-PREMIERMEATS"
+    },
+    {
+      "id": "PRD-BEEF-GRND-8020",
+      "name": "Ground Beef, 80/20",
+      "family": "beef",
+      "attributes": { "cut": "ground", "blend": "80/20" },
+      "uom": "lb",
+      "vendor_id": "SUP-PREMIERMEATS"
+    },
+    {
+      "id": "PRD-FLOUR-AP",
+      "name": "All-Purpose Flour",
+      "family": "flour",
+      "attributes": { "type": "all-purpose" },
+      "uom": "bag",
+      "vendor_id": "SUP-BULKPANTRY"
+    },
+    {
+      "id": "PRD-OIL-EVOO",
+      "name": "Olive Oil, Extra Virgin",
+      "family": "oil",
+      "attributes": { "type": "extra-virgin" },
+      "uom": "case",
+      "vendor_id": "SUP-RESTDEPOT"
     }
   ],
   "vendors": [
-    {
-      "id": "SUP-DAIRYCORP",
-      "name": "DairyCorp, Inc.",
-      "category": "dairy",
-      "approved": true,
-      "parent_id": "SUP-DAIRY-PARENT-001"
-    },
-    {
-      "id": "SUP-QUALITY-DAIRY",
-      "name": "Quality Dairy Partners",
-      "category": "dairy",
-      "approved": true,
-      "parent_id": "SUP-QUALITY-PARENT-001"
-    },
-    {
-      "id": "SUP-SYSCO-DAIRY",
-      "name": "Sysco Foodservice Bulk Dairy",
-      "category": "dairy",
-      "approved": true,
-      "parent_id": "SUP-SYSCO-PARENT-001"
-    },
-    {
-      "id": "SUP-FRESHGREEN",
-      "name": "FreshGreen Logistics",
-      "category": "produce",
-      "approved": true,
-      "parent_id": "SUP-FRESHGREEN-PARENT-001"
-    }
+    { "id": "SUP-DAIRYCORP", "name": "DairyCorp, Inc.", "category": "dairy", "approved": true, "parent_id": "SUP-DAIRY-PARENT-001" },
+    { "id": "SUP-QUALITY-DAIRY", "name": "Quality Dairy Partners", "category": "dairy", "approved": true, "parent_id": "SUP-QUALITY-PARENT-001" },
+    { "id": "SUP-SYSCO-DAIRY", "name": "Sysco Foodservice Bulk Dairy", "category": "dairy", "approved": true, "parent_id": "SUP-SYSCO-PARENT-001" },
+    { "id": "SUP-GOLDENSTATE", "name": "Golden State Creamery", "category": "dairy", "approved": true, "parent_id": "SUP-GOLDENSTATE-PARENT-001" },
+    { "id": "SUP-FRESHGREEN", "name": "FreshGreen Logistics", "category": "produce", "approved": true, "parent_id": "SUP-FRESHGREEN-PARENT-001" },
+    { "id": "SUP-VALLEYHARVEST", "name": "Valley Harvest Produce", "category": "produce", "approved": true, "parent_id": "SUP-VALLEYHARVEST-PARENT-001" },
+    { "id": "SUP-SUNFRESH", "name": "SunFresh Farms", "category": "produce", "approved": true, "parent_id": "SUP-SUNFRESH-PARENT-001" },
+    { "id": "SUP-PREMIERMEATS", "name": "Premier Meats Co.", "category": "meat", "approved": true, "parent_id": "SUP-PREMIER-PARENT-001" },
+    { "id": "SUP-BULKPANTRY", "name": "Bulk Pantry Supply", "category": "dry-goods", "approved": true, "parent_id": "SUP-BULKPANTRY-PARENT-001" },
+    { "id": "SUP-RESTDEPOT", "name": "Restaurant Depot Dry Goods", "category": "dry-goods", "approved": true, "parent_id": "SUP-RESTDEPOT-PARENT-001" },
+    { "id": "SUP-UNAPPROVED-MEAT", "name": "BackAlley Wholesale Meats", "category": "meat", "approved": false, "parent_id": "SUP-BACKALLEY-PARENT-001" }
   ],
   "vendor_aliases": [
     { "alias": "the main dairy co", "vendor_id": "SUP-DAIRYCORP", "confidence": "high" },
     { "alias": "main dairy co", "vendor_id": "SUP-DAIRYCORP", "confidence": "high" },
     { "alias": "dairycorp", "vendor_id": "SUP-DAIRYCORP", "confidence": "high" },
+    { "alias": "golden state creamery", "vendor_id": "SUP-GOLDENSTATE", "confidence": "high" },
+    { "alias": "golden state", "vendor_id": "SUP-GOLDENSTATE", "confidence": "high" },
     { "alias": "the green produce distributor", "vendor_id": "SUP-FRESHGREEN", "confidence": "high" },
     { "alias": "green produce distributor", "vendor_id": "SUP-FRESHGREEN", "confidence": "high" },
-    { "alias": "freshgreen", "vendor_id": "SUP-FRESHGREEN", "confidence": "high" }
+    { "alias": "freshgreen", "vendor_id": "SUP-FRESHGREEN", "confidence": "high" },
+    { "alias": "valley harvest", "vendor_id": "SUP-VALLEYHARVEST", "confidence": "high" },
+    { "alias": "sunfresh", "vendor_id": "SUP-SUNFRESH", "confidence": "high" },
+    { "alias": "sunfresh farms", "vendor_id": "SUP-SUNFRESH", "confidence": "high" },
+    { "alias": "premier", "vendor_id": "SUP-PREMIERMEATS", "confidence": "high" },
+    { "alias": "premier meats", "vendor_id": "SUP-PREMIERMEATS", "confidence": "high" },
+    { "alias": "bulk pantry", "vendor_id": "SUP-BULKPANTRY", "confidence": "high" },
+    { "alias": "restaurant depot", "vendor_id": "SUP-RESTDEPOT", "confidence": "high" }
   ],
   "contracts": [
-    {
-      "contract_id": "CT-DAIRY-2026",
-      "product_id": "PRD-CHED-SHARP-WHITE",
-      "parent_vendor_id": "SUP-DAIRY-PARENT-001",
-      "uom": "lb",
-      "unit_price": "4.50",
-      "effective": "2026-01-01"
-    },
-    {
-      "contract_id": "CT-PRODUCE-2026",
-      "product_id": "PRD-ROM-CLEANED",
-      "parent_vendor_id": "SUP-FRESHGREEN-PARENT-001",
-      "uom": "case",
-      "unit_price": "32.00",
-      "effective": "2026-01-01"
-    }
+    { "contract_id": "CT-DAIRY-2026", "product_id": "PRD-CHED-SHARP-WHITE", "parent_vendor_id": "SUP-DAIRY-PARENT-001", "uom": "lb", "unit_price": "4.50", "effective": "2026-01-01" },
+    { "contract_id": "CT-DAIRY-2026-B", "product_id": "PRD-CHED-MILD-SHRED", "parent_vendor_id": "SUP-DAIRY-PARENT-001", "uom": "lb", "unit_price": "3.80", "effective": "2026-01-01" },
+    { "contract_id": "CT-DAIRY-2026-C", "product_id": "PRD-CHED-PROC-SLICE", "parent_vendor_id": "SUP-DAIRY-PARENT-001", "uom": "case", "unit_price": "58.00", "effective": "2026-01-01" },
+    { "contract_id": "CT-GSC-2026", "product_id": "PRD-MOZZ-WM-SHRED", "parent_vendor_id": "SUP-GOLDENSTATE-PARENT-001", "uom": "lb", "unit_price": "3.95", "effective": "2026-01-01" },
+    { "contract_id": "CT-PRODUCE-2026", "product_id": "PRD-ROM-CLEANED", "parent_vendor_id": "SUP-FRESHGREEN-PARENT-001", "uom": "case", "unit_price": "32.00", "effective": "2026-01-01" },
+    { "contract_id": "CT-PRODUCE-2026-ICE", "product_id": "PRD-ICEBERG", "parent_vendor_id": "SUP-FRESHGREEN-PARENT-001", "uom": "case", "unit_price": "26.50", "effective": "2026-01-01" },
+    { "contract_id": "CT-VALLEY-2026", "product_id": "PRD-ROM-HEARTS", "parent_vendor_id": "SUP-VALLEYHARVEST-PARENT-001", "uom": "case", "unit_price": "29.00", "effective": "2026-01-01" },
+    { "contract_id": "CT-SUNFRESH-2026", "product_id": "PRD-TOM-ROMA", "parent_vendor_id": "SUP-SUNFRESH-PARENT-001", "uom": "case", "unit_price": "24.75", "effective": "2026-01-01" },
+    { "contract_id": "CT-PREMIER-2026-CHK", "product_id": "PRD-CHKN-BRST-BNLS", "parent_vendor_id": "SUP-PREMIER-PARENT-001", "uom": "lb", "unit_price": "2.90", "effective": "2026-01-01" },
+    { "contract_id": "CT-PREMIER-2026-BEEF", "product_id": "PRD-BEEF-GRND-8020", "parent_vendor_id": "SUP-PREMIER-PARENT-001", "uom": "lb", "unit_price": "4.20", "effective": "2026-01-01" },
+    { "contract_id": "CT-BULK-2026", "product_id": "PRD-FLOUR-AP", "parent_vendor_id": "SUP-BULKPANTRY-PARENT-001", "uom": "bag", "unit_price": "18.50", "effective": "2026-01-01" },
+    { "contract_id": "CT-RESTDEPOT-2026", "product_id": "PRD-OIL-EVOO", "parent_vendor_id": "SUP-RESTDEPOT-PARENT-001", "uom": "case", "unit_price": "72.00", "effective": "2026-01-01" }
   ]
 }

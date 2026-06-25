@@ -11,6 +11,7 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 from .catalog import Catalog
+from .uom import canonicalize
 from .schema import (
     ExtractedLine,
     ExtractedOrder,
@@ -82,9 +83,11 @@ def _resolve_line(line: ExtractedLine, catalog: Catalog) -> ResolvedLine:
     if quantity <= 0:
         raise _LineBlock("block", "quantity", "non_positive_quantity")
 
-    # 2. UOM must be present.
+    # 2. UOM must be present, then canonicalize synonyms (lbs -> lb). This is
+    #    canonicalization, not conversion: different physical units never merge.
     if not line.uom:
         raise _LineBlock("block", "uom", "missing_uom")
+    uom = canonicalize(line.uom)
 
     # 3. Product must resolve to exactly one catalog SKU. The model flags
     #    ambiguity; we also refuse to proceed if it left product_id null or named
@@ -126,7 +129,7 @@ def _resolve_line(line: ExtractedLine, catalog: Catalog) -> ResolvedLine:
         raise _LineBlock("block", "supplier entity", "supplier_parent_entity_unresolved")
 
     # 6. Contract pricing by canonical ids + exact UOM. No implicit conversion.
-    contract = catalog.contract(product["id"], parent_id, line.uom)
+    contract = catalog.contract(product["id"], parent_id, uom)
     if contract is None:
         # Distinguish a UOM mismatch from a missing contract for a precise reason.
         any_uom = catalog.contract(product["id"], parent_id, _other_uom(catalog, product["id"], parent_id))
@@ -146,7 +149,7 @@ def _resolve_line(line: ExtractedLine, catalog: Catalog) -> ResolvedLine:
         vendor_name=vendor["name"],
         parent_vendor_id=parent_id,
         quantity=quantity,
-        uom=line.uom,
+        uom=uom,
         contract_unit_price=unit_price,
         contract_id=contract["contract_id"],
         line_total=line_total,
