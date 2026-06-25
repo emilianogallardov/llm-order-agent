@@ -146,16 +146,19 @@ PASS  test_uom_mismatch_is_blocked
 
 ### Live stress test
 
-`stress_test.py` runs nine deliberately sloppy human messages ("yo can u throw
+`stress_test.py` runs sixteen deliberately sloppy human messages ("yo can u throw
 together 50 lbs of that sharp white cheddar from the main dairy co...") through
 the **real model** against a catalog full of lookalike variants and competing
-vendors, asserting the system selects the right SKU + vendor and blocks/clarifies
-when it should. This is what caught the UOM-canonicalization gap above.
+vendors, and runs the whole set several times to surface flakiness (a case that
+passes one run and fails another is a reliability bug, not a pass). The probes
+include typos ("CHEDDER"), uppercase, a missing vendor, an off-catalog product,
+decimal and zero quantities, "shredded"→mild-SKU resolution, and a four-line
+order. This is what caught the UOM-canonicalization gap above.
 
 ```bash
 pip install anthropic
-ANTHROPIC_API_KEY=... MODEL_ORDER_EXTRACTION=claude-sonnet-4-6 python stress_test.py
-# -> 9/9 live cases passed
+ANTHROPIC_API_KEY=... MODEL_ORDER_EXTRACTION=claude-sonnet-4-6 python stress_test.py 5
+# -> 16/16 cases passed every run (80/80 calls)
 ```
 
 ## Project layout
